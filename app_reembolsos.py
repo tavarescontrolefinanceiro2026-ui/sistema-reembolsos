@@ -19,7 +19,7 @@ st.set_page_config(page_title="Reembolsos Pro", page_icon="💼", layout="wide")
 USUARIOS = {
     "admin": {"senha": "1234", "perfil": "admin"},
     "diretoria": {"senha": "senha123", "perfil": "admin"},
-    "joao": {"senha": "111", "perfil": "funcionario"},
+    "eduarda": {"senha": "111", "perfil": "funcionario"},
     "maria": {"senha": "222", "perfil": "funcionario"},
     "ana": {"senha": "999", "perfil": "funcionario"}  # <--- Novo usuário adicionado aqui!
 }
