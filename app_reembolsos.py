@@ -77,7 +77,7 @@ def iniciar_robo():
     @bot.message_handler(content_types=['voice', 'audio'])
     def receber_audio(message):
         try:
-            bot.reply_to(message, "🎧 Ouvindo...")
+            bot.reply_to(message, "🎧 A ouvir...")
             file_id = message.voice.file_id if message.content_type == 'voice' else message.audio.file_id
             file_info = bot.get_file(file_id)
             downloaded = bot.download_file(file_info.file_path)
@@ -123,7 +123,7 @@ if not st.session_state.logado:
         st.write("")
         
         with st.form("form_login"):
-            usuario = st.text_input("Usuário", placeholder="Digite o seu utilizador")
+            usuario = st.text_input("Utilizador", placeholder="Digite o seu utilizador")
             senha = st.text_input("Palavra-passe", type="password", placeholder="Digite a sua palavra-passe")
             submit = st.form_submit_button("Entrar no Sistema", use_container_width=True)
             
@@ -148,9 +148,9 @@ else:
         st.rerun()
         
     st.sidebar.markdown("---")
-    menu = st.sidebar.radio("Navegação", ["➕ Novo Cadastro", "📊 Histórico e Painel", "⚙️ Configurações"])
+    menu = st.sidebar.radio("Navegação", ["➕ Novo Registo", "📊 Histórico e Painel", "⚙️ Configurações"])
 
-    if menu == "➕ Novo Cadastro":
+    if menu == "➕ Novo Registo":
         st.header("Registar Nova Despesa")
         
         tipo_bd = st.radio("Onde guardar?", ["👤 O Meu Gasto (Pessoal)", "🏢 Gasto da Empresa"])
@@ -193,47 +193,70 @@ else:
                 if not df.empty:
                     df['valor'] = pd.to_numeric(df['valor'])
                     
-                    total = df['valor'].sum()
-                    tot_alim = df[df['categoria'] == 'Alimentação']['valor'].sum()
-                    tot_hosp = df[df['categoria'] == 'Hospedagem']['valor'].sum()
+                    # Lógica de Filtro de Mês
+                    df['data_ordem'] = pd.to_datetime(df['data'], format='%d/%m/%Y', errors='coerce')
+                    df['mes_ano'] = df['data_ordem'].dt.strftime('%m/%Y').fillna("Sem Data")
                     
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("Total Gasto", f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                    c2.metric("Alimentação", f"R$ {tot_alim:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                    c3.metric("Hospedagem", f"R$ {tot_hosp:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    lista_meses = sorted([m for m in df['mes_ano'].unique() if m != "Sem Data"], reverse=True)
+                    opcoes_filtro = ["Todos os Meses"] + lista_meses
                     
-                    st.markdown("---")
+                    # Caixa de seleção do filtro
+                    mes_selecionado = st.selectbox(f"📅 Filtrar por Mês ({tipo_filtro})", opcoes_filtro, key=f"filtro_{tipo_filtro}")
                     
-                    st.subheader("📈 Análise de Gastos")
-                    col_graf1, col_graf2 = st.columns(2)
-                    
-                    with col_graf1:
-                        st.markdown("**Despesas por Categoria**")
-                        df_cat = df.groupby("categoria")["valor"].sum().reset_index()
-                        st.bar_chart(df_cat.set_index("categoria"))
-                        
-                    with col_graf2:
-                        st.markdown("**Evolução Diária**")
-                        df_data = df.groupby("data")["valor"].sum().reset_index()
-                        df_data['data_ordem'] = pd.to_datetime(df_data['data'], format='%d/%m/%Y', errors='coerce')
-                        df_data = df_data.dropna(subset=['data_ordem']).sort_values('data_ordem')
-                        st.line_chart(df_data.set_index("data")["valor"])
-                        
-                    st.markdown("---")
-                    
-                    if tipo_filtro == "Pessoal":
-                        df_exibicao = df.drop(columns=['status'], errors='ignore')
+                    # Aplicar o filtro aos dados
+                    if mes_selecionado != "Todos os Meses":
+                        df_filtrado = df[df['mes_ano'] == mes_selecionado].copy()
                     else:
-                        df_exibicao = df.copy()
+                        df_filtrado = df.copy()
                     
-                    st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
-                    
-                    output = BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        df_exibicao.to_excel(writer, index=False, sheet_name=tipo_filtro)
-                    planilha_pronta = output.getvalue()
-                    
-                    st.download_button(label=f"📊 Descarregar Planilha Excel ({tipo_filtro})", data=planilha_pronta, file_name=f"Relatorio_{tipo_filtro}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    if not df_filtrado.empty:
+                        # Calcular totais com base nos dados filtrados
+                        total = df_filtrado['valor'].sum()
+                        tot_alim = df_filtrado[df_filtrado['categoria'] == 'Alimentação']['valor'].sum()
+                        tot_hosp = df_filtrado[df_filtrado['categoria'] == 'Hospedagem']['valor'].sum()
+                        
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("Total Gasto", f"R$ {total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                        c2.metric("Alimentação", f"R$ {tot_alim:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                        c3.metric("Hospedagem", f"R$ {tot_hosp:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                        
+                        st.markdown("---")
+                        
+                        st.subheader("📈 Análise de Gastos")
+                        col_graf1, col_graf2 = st.columns(2)
+                        
+                        with col_graf1:
+                            st.markdown("**Despesas por Categoria**")
+                            df_cat = df_filtrado.groupby("categoria")["valor"].sum().reset_index()
+                            st.bar_chart(df_cat.set_index("categoria"))
+                            
+                        with col_graf2:
+                            st.markdown("**Evolução Diária**")
+                            df_data = df_filtrado.groupby("data")["valor"].sum().reset_index()
+                            df_data['data_dt'] = pd.to_datetime(df_data['data'], format='%d/%m/%Y', errors='coerce')
+                            df_data = df_data.dropna(subset=['data_dt']).sort_values('data_dt')
+                            st.line_chart(df_data.set_index("data")["valor"])
+                            
+                        st.markdown("---")
+                        
+                        # Limpar as colunas técnicas antes de exibir a tabela
+                        if tipo_filtro == "Pessoal":
+                            df_exibicao = df_filtrado.drop(columns=['status', 'data_ordem', 'mes_ano'], errors='ignore')
+                        else:
+                            df_exibicao = df_filtrado.drop(columns=['data_ordem', 'mes_ano'], errors='ignore')
+                        
+                        st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+                        
+                        output = BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            df_exibicao.to_excel(writer, index=False, sheet_name=tipo_filtro)
+                        planilha_pronta = output.getvalue()
+                        
+                        # Nome do ficheiro Excel adapta-se ao filtro escolhido
+                        nome_excel = f"Relatorio_{tipo_filtro}_{mes_selecionado.replace('/', '-')}.xlsx"
+                        st.download_button(label=f"📊 Descarregar Planilha Excel ({tipo_filtro})", data=planilha_pronta, file_name=nome_excel, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    else:
+                        st.info(f"Sem gastos registados para o mês de {mes_selecionado}.")
                 else:
                     st.info("Nenhuma despesa registada nesta categoria.")
 
