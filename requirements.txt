@@ -4,3 +4,4 @@ openpyxl
 pyTelegramBotAPI
 SpeechRecognition
 soundfile
+supabase
