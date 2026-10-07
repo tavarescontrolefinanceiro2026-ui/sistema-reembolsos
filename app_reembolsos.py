@@ -16,9 +16,12 @@ from supabase import create_client, Client
 # ==========================================
 st.set_page_config(page_title="Reembolsos Pro", page_icon="💼", layout="wide")
 
-USUARIOS_PERMITIDOS = {
-    "admin": "1234",
-    "diretoria": "senha123"
+# NOVOS PERFIS DE ACESSO (Hierarquia)
+USUARIOS = {
+    "admin": {"senha": "1234", "perfil": "admin"},
+    "diretoria": {"senha": "senha123", "perfil": "admin"},
+    "joao": {"senha": "111", "perfil": "funcionario"},
+    "maria": {"senha": "222", "perfil": "funcionario"}
 }
 
 TOKEN_TELEGRAM = "8757149338:AAFfMQWLBeskQIJ5NjS4684yMw7XO86B5Hk"
@@ -59,14 +62,14 @@ def iniciar_robo():
             
             data_hoje = datetime.now().strftime("%d/%m/%Y")
             
-            # Guardar na Supabase
             supabase.table("despesas").insert({
                 "data": data_hoje, "valor": valor, "categoria": cat, 
                 "descricao": desc_final, "anexo": "Via Telegram", 
-                "status": "Pendente", "tipo_gasto": "Pessoal"
+                "status": "Pendente", "tipo_gasto": "Pessoal",
+                "usuario": "admin" # Padrão do Telegram vai para a conta admin
             }).execute()
             
-            bot.reply_to(message, f"✅ Anotado!\nR$ {valor:.2f} com '{desc_final}' salvo no Pessoal.")
+            bot.reply_to(message, f"✅ Anotado!\nR$ {valor:.2f} com '{desc_final}' salvo.")
         else:
             bot.reply_to(message, "🤔 Não encontrei um valor. Ex: 'Gastei 150 com mercado'")
 
@@ -109,17 +112,18 @@ def iniciar_robo():
 iniciar_robo() 
 
 # ==========================================
-# VERIFICAÇÃO DE LOGIN
+# VERIFICAÇÃO DE LOGIN E PERFIL
 # ==========================================
 if "logado" not in st.session_state:
     st.session_state.logado = False
     st.session_state.usuario_atual = ""
+    st.session_state.perfil = ""
 
 if not st.session_state.logado:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.markdown("<h1 style='text-align: center;'>💼 Reembolsos Pro</h1>", unsafe_allow_html=True)
-        st.markdown("<h4 style='text-align: center; color: gray;'>Acesso Restrito (Nuvem)</h4>", unsafe_allow_html=True)
+        st.markdown("<h4 style='text-align: center; color: gray;'>Acesso ao Sistema</h4>", unsafe_allow_html=True)
         st.write("")
         
         with st.form("form_login"):
@@ -128,9 +132,10 @@ if not st.session_state.logado:
             submit = st.form_submit_button("Entrar no Sistema", use_container_width=True)
             
             if submit:
-                if usuario in USUARIOS_PERMITIDOS and USUARIOS_PERMITIDOS[usuario] == senha:
+                if usuario in USUARIOS and USUARIOS[usuario]["senha"] == senha:
                     st.session_state.logado = True
                     st.session_state.usuario_atual = usuario
+                    st.session_state.perfil = USUARIOS[usuario]["perfil"]
                     st.rerun() 
                 else:
                     st.error("❌ Utilizador ou palavra-passe incorretos!")
@@ -140,21 +145,33 @@ else:
     # INTERFACE DO SITE
     # ==========================================
     st.sidebar.title("💼 Reembolsos Pro")
-    st.sidebar.markdown(f"**👤 Utilizador:** `{st.session_state.usuario_atual}`")
+    st.sidebar.markdown(f"**👤 Utilizador:** `{st.session_state.usuario_atual}` ({st.session_state.perfil.upper()})")
     
     if st.sidebar.button("🚪 Sair do Sistema"):
         st.session_state.logado = False
         st.session_state.usuario_atual = ""
+        st.session_state.perfil = ""
         st.rerun()
         
     st.sidebar.markdown("---")
-    menu = st.sidebar.radio("Navegação", ["➕ Novo Registo", "📊 Histórico e Painel", "⚙️ Configurações"])
+    
+    # Bloquear menu de configurações para funcionários
+    opcoes_menu = ["➕ Novo Registo", "📊 Histórico e Painel"]
+    if st.session_state.perfil == "admin":
+        opcoes_menu.append("⚙️ Configurações")
+        
+    menu = st.sidebar.radio("Navegação", opcoes_menu)
 
     if menu == "➕ Novo Registo":
         st.header("Registar Nova Despesa")
         
-        tipo_bd = st.radio("Onde guardar?", ["👤 O Meu Gasto (Pessoal)", "🏢 Gasto da Empresa"])
-        tipo_bd_str = "Pessoal" if "Pessoal" in tipo_bd else "Empresa"
+        # Funcionário não escolhe onde guardar, vai direto para a sua conta
+        if st.session_state.perfil == "admin":
+            tipo_bd = st.radio("Onde guardar?", ["👤 Gastos de Funcionários", "🏢 Gasto da Empresa"])
+            tipo_bd_str = "Pessoal" if "Funcionários" in tipo_bd else "Empresa"
+        else:
+            st.info(f"A registar na conta pessoal de {st.session_state.usuario_atual.capitalize()}")
+            tipo_bd_str = "Pessoal"
         
         with st.form("form_cadastro", clear_on_submit=True):
             col1, col2 = st.columns(2)
@@ -176,41 +193,57 @@ else:
                 supabase.table("despesas").insert({
                     "data": data_str, "valor": valor_input, "categoria": cat_input, 
                     "descricao": desc_input, "anexo": nome_anexo, 
-                    "status": "Pendente", "tipo_gasto": tipo_bd_str
+                    "status": "Pendente", "tipo_gasto": tipo_bd_str,
+                    "usuario": st.session_state.usuario_atual
                 }).execute()
-                st.success("✅ Gasto guardado na nuvem com sucesso!")
+                st.success("✅ Gasto registado com sucesso!")
 
     elif menu == "📊 Histórico e Painel":
         st.header("Painel de Controlo")
         
-        aba_pessoal, aba_empresa = st.tabs(["👤 Os Meus Gastos (Pessoal)", "🏢 Gastos da Empresa"])
+        if st.session_state.perfil == "admin":
+            aba_pessoal, aba_empresa = st.tabs(["👤 Gastos dos Funcionários", "🏢 Gastos da Empresa"])
+            abas = [(aba_pessoal, "Pessoal"), (aba_empresa, "Empresa")]
+        else:
+            aba_unica, = st.tabs(["👤 Os Meus Gastos"])
+            abas = [(aba_unica, "Pessoal")]
         
-        for aba, tipo_filtro in zip([aba_pessoal, aba_empresa], ["Pessoal", "Empresa"]):
+        for aba, tipo_filtro in abas:
             with aba:
-                resposta = supabase.table("despesas").select("id, data, categoria, descricao, valor, status").eq("tipo_gasto", tipo_filtro).execute()
+                # O funcionário só carrega os seus próprios dados
+                query = supabase.table("despesas").select("id, data, categoria, descricao, valor, status, usuario").eq("tipo_gasto", tipo_filtro)
+                if st.session_state.perfil == "funcionario":
+                    query = query.eq("usuario", st.session_state.usuario_atual)
+                    
+                resposta = query.execute()
                 df = pd.DataFrame(resposta.data)
                 
                 if not df.empty:
                     df['valor'] = pd.to_numeric(df['valor'])
-                    
-                    # Lógica de Filtro de Mês
                     df['data_ordem'] = pd.to_datetime(df['data'], format='%d/%m/%Y', errors='coerce')
                     df['mes_ano'] = df['data_ordem'].dt.strftime('%m/%Y').fillna("Sem Data")
                     
                     lista_meses = sorted([m for m in df['mes_ano'].unique() if m != "Sem Data"], reverse=True)
                     opcoes_filtro = ["Todos os Meses"] + lista_meses
                     
-                    # Caixa de seleção do filtro
-                    mes_selecionado = st.selectbox(f"📅 Filtrar por Mês ({tipo_filtro})", opcoes_filtro, key=f"filtro_{tipo_filtro}")
+                    col_f1, col_f2 = st.columns(2)
+                    with col_f1:
+                        mes_selecionado = st.selectbox(f"📅 Filtrar por Mês", opcoes_filtro, key=f"mes_{tipo_filtro}")
                     
-                    # Aplicar o filtro aos dados
+                    df_filtrado = df.copy()
+                    
+                    # Filtro extra exclusivo para os Admins procurarem por um funcionário específico
+                    if st.session_state.perfil == "admin" and tipo_filtro == "Pessoal":
+                        with col_f2:
+                            lista_usuarios = ["Todos"] + list(df['usuario'].dropna().unique())
+                            usr_selecionado = st.selectbox(f"👤 Filtrar por Funcionário", lista_usuarios, key=f"usr_{tipo_filtro}")
+                            if usr_selecionado != "Todos":
+                                df_filtrado = df_filtrado[df_filtrado['usuario'] == usr_selecionado]
+                    
                     if mes_selecionado != "Todos os Meses":
-                        df_filtrado = df[df['mes_ano'] == mes_selecionado].copy()
-                    else:
-                        df_filtrado = df.copy()
+                        df_filtrado = df_filtrado[df_filtrado['mes_ano'] == mes_selecionado]
                     
                     if not df_filtrado.empty:
-                        # Calcular totais com base nos dados filtrados
                         total = df_filtrado['valor'].sum()
                         tot_alim = df_filtrado[df_filtrado['categoria'] == 'Alimentação']['valor'].sum()
                         tot_hosp = df_filtrado[df_filtrado['categoria'] == 'Hospedagem']['valor'].sum()
@@ -221,7 +254,6 @@ else:
                         c3.metric("Hospedagem", f"R$ {tot_hosp:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                         
                         st.markdown("---")
-                        
                         st.subheader("📈 Análise de Gastos")
                         col_graf1, col_graf2 = st.columns(2)
                         
@@ -239,11 +271,15 @@ else:
                             
                         st.markdown("---")
                         
-                        # Limpar as colunas técnicas antes de exibir a tabela
-                        if tipo_filtro == "Pessoal":
-                            df_exibicao = df_filtrado.drop(columns=['status', 'data_ordem', 'mes_ano'], errors='ignore')
-                        else:
-                            df_exibicao = df_filtrado.drop(columns=['data_ordem', 'mes_ano'], errors='ignore')
+                        # Esconder colunas técnicas
+                        df_exibicao = df_filtrado.drop(columns=['data_ordem', 'mes_ano'], errors='ignore')
+                        if st.session_state.perfil == "funcionario" and 'status' in df_exibicao.columns:
+                            df_exibicao = df_exibicao.drop(columns=['status'])
+                            
+                        # Colocar a coluna do utilizador em primeiro lugar
+                        if 'usuario' in df_exibicao.columns:
+                            cols = ['usuario'] + [c for c in df_exibicao.columns if c != 'usuario']
+                            df_exibicao = df_exibicao[cols]
                         
                         st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
                         
@@ -251,16 +287,14 @@ else:
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
                             df_exibicao.to_excel(writer, index=False, sheet_name=tipo_filtro)
                         planilha_pronta = output.getvalue()
-                        
-                        # Nome do ficheiro Excel adapta-se ao filtro escolhido
                         nome_excel = f"Relatorio_{tipo_filtro}_{mes_selecionado.replace('/', '-')}.xlsx"
-                        st.download_button(label=f"📊 Descarregar Planilha Excel ({tipo_filtro})", data=planilha_pronta, file_name=nome_excel, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                        st.download_button(label=f"📊 Descarregar Planilha Excel", data=planilha_pronta, file_name=nome_excel, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                     else:
-                        st.info(f"Sem gastos registados para o mês de {mes_selecionado}.")
+                        st.info("Sem dados para os filtros selecionados.")
                 else:
                     st.info("Nenhuma despesa registada nesta categoria.")
 
-    elif menu == "⚙️ Configurações":
+    elif menu == "⚙️ Configurações" and st.session_state.perfil == "admin":
         st.header("Gestão do Sistema")
         
         st.subheader("📥 Importar Planilha da Empresa")
@@ -269,7 +303,6 @@ else:
             if st.button("Importar Dados"):
                 try:
                     df_imp = pd.read_excel(arquivo_up, header=None)
-                    
                     resposta_existentes = supabase.table("despesas").select("data, valor, descricao").eq("tipo_gasto", "Empresa").execute()
                     existentes = set()
                     for r in resposta_existentes.data:
@@ -303,7 +336,8 @@ else:
                                     novos_registos.append({
                                         "data": data_str, "valor": v, "categoria": cat, 
                                         "descricao": desc, "anexo": "Planilha", 
-                                        "status": "Pendente", "tipo_gasto": "Empresa"
+                                        "status": "Pendente", "tipo_gasto": "Empresa",
+                                        "usuario": "admin"
                                     })
                                     existentes.add((data_str, v, desc.strip()))
                                 except: continue
@@ -327,7 +361,7 @@ else:
 
         st.markdown("---")
         st.subheader("🧹 Limpeza Geral")
-        aba_limpar = st.selectbox("Qual base de dados deseja ZERAR?", ["Nenhuma", "👤 Pessoal", "🏢 Empresa"])
+        aba_limpar = st.selectbox("Qual base de dados deseja ZERAR?", ["Nenhuma", "👤 Pessoal (Funcionários)", "🏢 Empresa"])
         if aba_limpar != "Nenhuma":
             st.error("⚠️ Atenção: Isto não pode ser desfeito!")
             if st.button(f"🗑️ SIM, APAGAR TUDO DE {aba_limpar}"):
