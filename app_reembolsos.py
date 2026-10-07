@@ -16,7 +16,6 @@ from supabase import create_client, Client
 # ==========================================
 st.set_page_config(page_title="Reembolsos Pro", page_icon="💼", layout="wide")
 
-# NOVOS PERFIS DE ACESSO (Hierarquia)
 USUARIOS = {
     "admin": {"senha": "1234", "perfil": "admin"},
     "diretoria": {"senha": "senha123", "perfil": "admin"},
@@ -66,7 +65,7 @@ def iniciar_robo():
                 "data": data_hoje, "valor": valor, "categoria": cat, 
                 "descricao": desc_final, "anexo": "Via Telegram", 
                 "status": "Pendente", "tipo_gasto": "Pessoal",
-                "usuario": "admin" # Padrão do Telegram vai para a conta admin
+                "usuario": "admin"
             }).execute()
             
             bot.reply_to(message, f"✅ Anotado!\nR$ {valor:.2f} com '{desc_final}' salvo.")
@@ -155,7 +154,6 @@ else:
         
     st.sidebar.markdown("---")
     
-    # Bloquear menu de configurações para funcionários
     opcoes_menu = ["➕ Novo Registo", "📊 Histórico e Painel"]
     if st.session_state.perfil == "admin":
         opcoes_menu.append("⚙️ Configurações")
@@ -165,7 +163,6 @@ else:
     if menu == "➕ Novo Registo":
         st.header("Registar Nova Despesa")
         
-        # Funcionário não escolhe onde guardar, vai direto para a sua conta
         if st.session_state.perfil == "admin":
             tipo_bd = st.radio("Onde guardar?", ["👤 Gastos de Funcionários", "🏢 Gasto da Empresa"])
             tipo_bd_str = "Pessoal" if "Funcionários" in tipo_bd else "Empresa"
@@ -188,15 +185,32 @@ else:
             
             if submit:
                 data_str = data_input.strftime("%d/%m/%Y")
-                nome_anexo = anexo_input.name if anexo_input else "Sem anexo"
+                link_anexo = "Sem anexo"
+                
+                # Upload do ficheiro para a Supabase
+                if anexo_input:
+                    try:
+                        # Criar um nome único para não haver ficheiros repetidos
+                        nome_arquivo = f"{int(datetime.now().timestamp())}_{anexo_input.name.replace(' ', '_')}"
+                        
+                        # Enviar para a nuvem
+                        supabase.storage.from_("comprovantes").upload(
+                            path=nome_arquivo, 
+                            file=anexo_input.getvalue(), 
+                            file_options={"content-type": anexo_input.type}
+                        )
+                        # Gerar o link público do ficheiro
+                        link_anexo = supabase.storage.from_("comprovantes").get_public_url(nome_arquivo)
+                    except Exception as e:
+                        st.error(f"⚠️ Aviso: Não foi possível guardar o anexo na nuvem. Erro: {e}")
                 
                 supabase.table("despesas").insert({
                     "data": data_str, "valor": valor_input, "categoria": cat_input, 
-                    "descricao": desc_input, "anexo": nome_anexo, 
+                    "descricao": desc_input, "anexo": link_anexo, 
                     "status": "Pendente", "tipo_gasto": tipo_bd_str,
                     "usuario": st.session_state.usuario_atual
                 }).execute()
-                st.success("✅ Gasto registado com sucesso!")
+                st.success("✅ Gasto e comprovativo registados com sucesso!")
 
     elif menu == "📊 Histórico e Painel":
         st.header("Painel de Controlo")
@@ -210,8 +224,7 @@ else:
         
         for aba, tipo_filtro in abas:
             with aba:
-                # O funcionário só carrega os seus próprios dados
-                query = supabase.table("despesas").select("id, data, categoria, descricao, valor, status, usuario").eq("tipo_gasto", tipo_filtro)
+                query = supabase.table("despesas").select("id, data, categoria, descricao, valor, anexo, status, usuario").eq("tipo_gasto", tipo_filtro)
                 if st.session_state.perfil == "funcionario":
                     query = query.eq("usuario", st.session_state.usuario_atual)
                     
@@ -232,7 +245,6 @@ else:
                     
                     df_filtrado = df.copy()
                     
-                    # Filtro extra exclusivo para os Admins procurarem por um funcionário específico
                     if st.session_state.perfil == "admin" and tipo_filtro == "Pessoal":
                         with col_f2:
                             lista_usuarios = ["Todos"] + list(df['usuario'].dropna().unique())
@@ -271,17 +283,23 @@ else:
                             
                         st.markdown("---")
                         
-                        # Esconder colunas técnicas
                         df_exibicao = df_filtrado.drop(columns=['data_ordem', 'mes_ano'], errors='ignore')
                         if st.session_state.perfil == "funcionario" and 'status' in df_exibicao.columns:
                             df_exibicao = df_exibicao.drop(columns=['status'])
                             
-                        # Colocar a coluna do utilizador em primeiro lugar
                         if 'usuario' in df_exibicao.columns:
                             cols = ['usuario'] + [c for c in df_exibicao.columns if c != 'usuario']
                             df_exibicao = df_exibicao[cols]
                         
-                        st.dataframe(df_exibicao, use_container_width=True, hide_index=True)
+                        # Tornar o link do anexo clicável nativamente no Streamlit
+                        st.dataframe(
+                            df_exibicao, 
+                            use_container_width=True, 
+                            hide_index=True,
+                            column_config={
+                                "anexo": st.column_config.LinkColumn("Comprovativo")
+                            }
+                        )
                         
                         output = BytesIO()
                         with pd.ExcelWriter(output, engine='openpyxl') as writer:
