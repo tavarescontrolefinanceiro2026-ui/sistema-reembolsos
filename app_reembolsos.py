@@ -20,7 +20,8 @@ USUARIOS = {
     "admin": {"senha": "1234", "perfil": "admin"},
     "diretoria": {"senha": "senha123", "perfil": "admin"},
     "joao": {"senha": "111", "perfil": "funcionario"},
-    "maria": {"senha": "222", "perfil": "funcionario"}
+    "maria": {"senha": "222", "perfil": "funcionario"},
+    "ana": {"senha": "999", "perfil": "funcionario"}  # <--- Novo usuário adicionado aqui!
 }
 
 TOKEN_TELEGRAM = "8757149338:AAFfMQWLBeskQIJ5NjS4684yMw7XO86B5Hk"
