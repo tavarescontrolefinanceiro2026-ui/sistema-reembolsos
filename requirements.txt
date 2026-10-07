@@ -1,0 +1,6 @@
+streamlit
+pandas
+openpyxl
+pyTelegramBotAPI
+SpeechRecognition
+soundfile
